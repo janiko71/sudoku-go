@@ -1,0 +1,248 @@
+package main
+
+import (
+	"bufio"
+	"fmt"
+	"os"
+	"strconv"
+	"strings"
+	"time"
+)
+
+var (
+	grille      []int
+	nbIter      int
+	FULL        = []int{1, 2, 3, 4, 5, 6, 7, 8, 9}
+	DEBUG       = false
+	nbSolutions int
+)
+
+type Grille struct {
+	item []int
+}
+
+func NewGrille(itemList []int) *Grille {
+	g := &Grille{item: make([]int, len(itemList))}
+	copy(g.item, itemList)
+	return g
+}
+
+func (g *Grille) String() string {
+	return g.joliPrint()
+}
+
+func (g *Grille) joliPrint() string {
+	var disp strings.Builder
+	for i := 0; i < 9; i++ {
+		if i%3 == 0 {
+			disp.WriteString("------------+-----------+------------\n")
+		}
+		disp.WriteString("! ")
+		for j := 0; j < 9; j++ {
+			disp.WriteString(fmt.Sprintf(" %d ", g.item[i*9+j]))
+			if j%3 == 2 {
+				disp.WriteString(" ! ")
+			}
+		}
+		disp.WriteString("\n")
+	}
+	disp.WriteString("------------+-----------+------------\n")
+	return disp.String()
+}
+
+func (g *Grille) ligne(i int) []int {
+	return g.item[i*9 : i*9+9]
+}
+
+func (g *Grille) colonne(j int) []int {
+	col := make([]int, 9)
+	for i := 0; i < 9; i++ {
+		col[i] = g.item[i*9+j]
+	}
+	return col
+}
+
+func (g *Grille) blocXY(i, j int) []int {
+	pos := (i/3)*27 + (j/3)*3
+	return append(g.item[pos:pos+3], append(g.item[pos+9:pos+12], g.item[pos+18:pos+21]...)...)
+}
+
+func (g *Grille) coord(pos int) (int, int) {
+	return pos / 9, pos % 9
+}
+
+func (g *Grille) chercheOrdre() []int {
+	possibiliteGrille := make(map[int]int)
+	for pos := 0; pos < 81; pos++ {
+		if g.item[pos] == 0 {
+			for num := 1; num <= 9; num++ {
+				if g.estPossible(num, pos) {
+					possibiliteGrille[pos]++
+				}
+			}
+		}
+	}
+	ordreCellules := make([]int, 0, len(possibiliteGrille))
+	for pos := range possibiliteGrille {
+		ordreCellules = append(ordreCellules, pos)
+	}
+	return ordreCellules
+}
+
+func (g *Grille) estResolu() bool {
+	for i := 0; i < 9; i++ {
+		lig := g.ligne(i)
+		if !equals(lig, FULL) {
+			return false
+		}
+	}
+	for j := 0; j < 9; j++ {
+		col := g.colonne(j)
+		if !equals(col, FULL) {
+			return false
+		}
+	}
+	for c := 0; c < 9; c++ {
+		bloc := g.blocXY(c/3*3, c%3*3)
+		if !equals(bloc, FULL) {
+			return false
+		}
+	}
+	nbSolutions++
+	return true
+}
+
+func (g *Grille) estPossible(num, pos int) bool {
+	lig, col := g.coord(pos)
+	if !contains(g.ligne(lig), num) && !contains(g.colonne(col), num) && !contains(g.blocXY(lig, col), num) {
+		if DEBUG {
+			fmt.Printf("On peut mettre %d dans la grille à la position (%d, %d).\n", num, lig, col)
+		}
+		return true
+	}
+	return false
+}
+
+func lectureFichier(nomFichier string) *Grille {
+	file, err := os.Open(nomFichier)
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	grille := make([]int, 0, 81)
+	for scanner.Scan() {
+		ligne := strings.ReplaceAll(scanner.Text(), " ", "")
+		if len(ligne) == 9 {
+			for _, c := range ligne {
+				num, err := strconv.Atoi(string(c))
+				if err != nil {
+					num = 0
+				}
+				grille = append(grille, num)
+			}
+		} else if len(ligne) != 0 {
+			fmt.Printf("\nMauvais format de ligne (longueur attendue : 9, lue : %d)\n", len(ligne))
+			os.Exit(1)
+		}
+	}
+	if len(grille) != 81 {
+		fmt.Printf("\nMauvais nombre de lignes (longueur attendue : 9, lue : %d)\n", len(grille))
+		os.Exit(1)
+	}
+	return NewGrille(grille)
+}
+
+func cherche(grille *Grille) {
+	nbIter++
+
+	if nbIter%5000 == 0 {
+		fmt.Printf("%d essais\n", nbIter)
+	}
+	if DEBUG {
+		fmt.Printf("(%d)\n", nbIter)
+		fmt.Println(grille)
+	}
+
+	if grille.estResolu() {
+		fmt.Printf("==============================\n")
+		fmt.Printf("SOLUTION #%d TROUVEE (%d itérations) :\n", nbSolutions, nbIter)
+		fmt.Printf("==============================\n")
+		fmt.Println(grille)
+		return
+	}
+
+	ordre := grille.chercheOrdre()
+	if DEBUG {
+		fmt.Println(ordre)
+	}
+
+	for _, ind := range ordre {
+		for num := 1; num <= 9; num++ {
+			if grille.item[ind] == 0 && grille.estPossible(num, ind) {
+				newGrille := NewGrille(grille.item)
+				newGrille.item[ind] = num
+				cherche(newGrille)
+				return
+			}
+		}
+	}
+	if DEBUG {
+		fmt.Println("Fin des recherches (infructueuses)")
+	}
+}
+
+func main() {
+	const defaultFileName = "1.txt"
+	var fileName string
+	if len(os.Args) > 1 {
+		fileName = os.Args[1]
+	} else {
+		fmt.Printf("Nom du fichier (grille), sans .txt [%s]: ", defaultFileName)
+		fmt.Scanln(&fileName)
+	}
+
+	if fileName == "" {
+		fileName = defaultFileName
+	} else if !strings.HasSuffix(fileName, ".txt") {
+		fileName += ".txt"
+	}
+
+	grille := lectureFichier(fileName)
+	fmt.Println("\nGrille initiale")
+	fmt.Println(grille)
+
+	if grille.estResolu() {
+		fmt.Println("La grille en entrée est déjà terminée ! Il n'y a rien à faire !")
+		return
+	}
+
+	fmt.Println("On démarre la recherche...\n")
+	start := time.Now()
+	cherche(grille)
+	elapsed := time.Since(start)
+	fmt.Printf("Problème résolu en %v secondes.\n", elapsed.Seconds())
+}
+
+func equals(a, b []int) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func contains(slice []int, item int) bool {
+	for _, v := range slice {
+		if v == item {
+			return true
+		}
+	}
+	return false
+}
